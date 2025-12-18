@@ -19,9 +19,6 @@ jobs:
     steps:
       - name: System overview
         run: |
-          echo "=========================================="
-          echo "🖥️  SYSTEM OVERVIEW"
-          echo "=========================================="
           echo "Kernel: $(uname -r)"
           echo "OS: $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
           echo "Architecture: $(uname -m)"
@@ -29,9 +26,6 @@ jobs:
 
       - name: Uptime & load
         run: |
-          echo "=========================================="
-          echo "⏱️  UPTIME & LOAD"
-          echo "=========================================="
           uptime
           echo ""
           echo "Load averages (1, 5, 15 min):"
@@ -40,18 +34,12 @@ jobs:
 
       - name: CPU info
         run: |
-          echo "=========================================="
-          echo "🔧 CPU INFO"
-          echo "=========================================="
           echo "CPU Model: $(grep 'model name' /proc/cpuinfo | head -1 | cut -d':' -f2 | xargs || grep 'Model' /proc/cpuinfo | head -1 | cut -d':' -f2 | xargs)"
           echo "CPU Cores: $(nproc)"
           echo ""
 
       - name: Memory usage
         run: |
-          echo "=========================================="
-          echo "🧠 MEMORY USAGE"
-          echo "=========================================="
           free -h
           echo ""
           echo "Memory details:"
@@ -63,9 +51,6 @@ jobs:
 
       - name: Disk usage
         run: |
-          echo "=========================================="
-          echo "💾 DISK USAGE"
-          echo "=========================================="
           df -h
           echo ""
           echo "Disk usage summary for root filesystem:"
@@ -74,12 +59,9 @@ jobs:
 
       - name: Temperature
         run: |
-          echo "=========================================="
-          echo "🌡️  TEMPERATURE"
-          echo "=========================================="
           if [ -f /sys/class/thermal/thermal_zone0/temp ]; then
             temp=$(cat /sys/class/thermal/thermal_zone0/temp)
-            echo "CPU Temperature: $(echo "scale=1; $temp/1000" | bc)°C"
+            echo "CPU Temperature: $(awk "BEGIN {printf \"%.1f\", $temp/1000}")°C"
           else
             echo "Temperature sensor not available"
           fi
@@ -87,18 +69,12 @@ jobs:
 
       - name: Process info
         run: |
-          echo "=========================================="
-          echo "📊 PROCESS INFO"
-          echo "=========================================="
           echo "Running processes: $(ps aux | wc -l)"
           echo "Zombie processes: $(ps aux | awk '$8 ~ /Z/ {count++} END {print count+0}')"
           echo ""
 
       - name: GitHub Actions runner info
         run: |
-          echo "=========================================="
-          echo "🏃 GITHUB ACTIONS RUNNER"
-          echo "=========================================="
           echo "Runner name: ${{ matrix.runner }}"
           echo "Runner OS: $RUNNER_OS"
           echo "Runner arch: $RUNNER_ARCH"

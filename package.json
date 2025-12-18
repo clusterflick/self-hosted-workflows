@@ -1,0 +1,8 @@
+{
+  "name": "self-hosted-workflows",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Runs workflows that use self-hosted runners",
+  "author": "Alistair Brown <github@alistairjcbrown.com>",
+  "license": "MIT"
+}

@@ -1,0 +1,106 @@
+on:
+  workflow_dispatch:
+
+name: Runner stats
+
+jobs:
+  runner-stats:
+    name: Stats for ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - self-hosted-pi4-1
+          - self-hosted-pi4-2
+          - self-hosted-pi4-3
+          - self-hosted-pi4-4
+          - self-hosted-pi4-5
+    steps:
+      - name: System overview
+        run: |
+          echo "=========================================="
+          echo "🖥️  SYSTEM OVERVIEW"
+          echo "=========================================="
+          echo "Kernel: $(uname -r)"
+          echo "OS: $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
+          echo "Architecture: $(uname -m)"
+          echo ""
+
+      - name: Uptime & load
+        run: |
+          echo "=========================================="
+          echo "⏱️  UPTIME & LOAD"
+          echo "=========================================="
+          uptime
+          echo ""
+          echo "Load averages (1, 5, 15 min):"
+          cat /proc/loadavg
+          echo ""
+
+      - name: CPU info
+        run: |
+          echo "=========================================="
+          echo "🔧 CPU INFO"
+          echo "=========================================="
+          echo "CPU Model: $(grep 'model name' /proc/cpuinfo | head -1 | cut -d':' -f2 | xargs || grep 'Model' /proc/cpuinfo | head -1 | cut -d':' -f2 | xargs)"
+          echo "CPU Cores: $(nproc)"
+          echo ""
+
+      - name: Memory usage
+        run: |
+          echo "=========================================="
+          echo "🧠 MEMORY USAGE"
+          echo "=========================================="
+          free -h
+          echo ""
+          echo "Memory details:"
+          echo "  Total: $(grep MemTotal /proc/meminfo | awk '{print $2/1024 " MB"}')"
+          echo "  Available: $(grep MemAvailable /proc/meminfo | awk '{print $2/1024 " MB"}')"
+          echo "  Swap Total: $(grep SwapTotal /proc/meminfo | awk '{print $2/1024 " MB"}')"
+          echo "  Swap Free: $(grep SwapFree /proc/meminfo | awk '{print $2/1024 " MB"}')"
+          echo ""
+
+      - name: Disk usage
+        run: |
+          echo "=========================================="
+          echo "💾 DISK USAGE"
+          echo "=========================================="
+          df -h
+          echo ""
+          echo "Disk usage summary for root filesystem:"
+          df -h / | tail -1 | awk '{print "  Size: " $2 "\n  Used: " $3 " (" $5 ")\n  Available: " $4}'
+          echo ""
+
+      - name: Temperature
+        run: |
+          echo "=========================================="
+          echo "🌡️  TEMPERATURE"
+          echo "=========================================="
+          if [ -f /sys/class/thermal/thermal_zone0/temp ]; then
+            temp=$(cat /sys/class/thermal/thermal_zone0/temp)
+            echo "CPU Temperature: $(echo "scale=1; $temp/1000" | bc)°C"
+          else
+            echo "Temperature sensor not available"
+          fi
+          echo ""
+
+      - name: Process info
+        run: |
+          echo "=========================================="
+          echo "📊 PROCESS INFO"
+          echo "=========================================="
+          echo "Running processes: $(ps aux | wc -l)"
+          echo "Zombie processes: $(ps aux | awk '$8 ~ /Z/ {count++} END {print count+0}')"
+          echo ""
+
+      - name: GitHub Actions runner info
+        run: |
+          echo "=========================================="
+          echo "🏃 GITHUB ACTIONS RUNNER"
+          echo "=========================================="
+          echo "Runner name: ${{ matrix.runner }}"
+          echo "Runner OS: $RUNNER_OS"
+          echo "Runner arch: $RUNNER_ARCH"
+          echo ""
+

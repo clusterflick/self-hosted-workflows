@@ -1,0 +1,28 @@
+on:
+  schedule:
+    - cron: '0 12 * * 1'  # 12:00 UTC every Monday
+  workflow_dispatch:
+
+name: Free space on runners
+
+jobs:
+  free-space:
+    name: Free space on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - self-hosted-pi4-1
+          - self-hosted-pi4-2
+          - self-hosted-pi4-3
+          - self-hosted-pi4-4
+          - self-hosted-pi4-5
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: .node-version
+      - run: npm cache verify
+      - run: npm cache clean --force
+      - run: npm cache verify

@@ -57,6 +57,70 @@ jobs:
           df -h / | tail -1 | awk '{print "  Size: " $2 "\n  Used: " $3 " (" $5 ")\n  Available: " $4}'
           echo ""
 
+      - name: SD card health
+        run: |
+          # Check if root is mounted read-only (sign of SD card failure)
+          if grep -qs ' / .*\bro\b' /proc/mounts; then
+            echo "⚠️  WARNING: Root filesystem is mounted READ-ONLY!"
+          else
+            echo "✅ Root filesystem is read-write"
+          fi
+
+          if touch /tmp/.sd_write_test_$$ 2>/dev/null && rm /tmp/.sd_write_test_$$ 2>/dev/null; then
+            echo "✅ Write test passed"
+          else
+            echo "⚠️  WARNING: Write test failed!"
+          fi
+
+          io_errors=$(dmesg | tail -500 | grep -iE 'i/o error|mmc.*error|mmcblk.*error|failed|read-only|EXT4-fs error' | tail -10)
+          if [ -n "$io_errors" ]; then
+            echo "⚠️  Potential issues found:"
+            echo "$io_errors"
+          else
+            echo "✅ No recent I/O or SD card errors detected"
+          fi
+
+          echo "SD Card Info"
+          if [ -f /sys/block/mmcblk0/device/name ]; then
+            echo " - Card name: $(cat /sys/block/mmcblk0/device/name)"
+          fi
+          if [ -f /sys/block/mmcblk0/device/type ]; then
+            echo " - Card type: $(cat /sys/block/mmcblk0/device/type)"
+          fi
+          if [ -f /sys/block/mmcblk0/device/date ]; then
+            echo " - Manufacture date: $(cat /sys/block/mmcblk0/device/date)"
+          fi
+          if [ -f /sys/block/mmcblk0/device/manfid ]; then
+            manfid=$(cat /sys/block/mmcblk0/device/manfid)
+            case "$manfid" in
+              0x000001) manufacturer="Panasonic" ;;
+              0x000002) manufacturer="Toshiba" ;;
+              0x000003) manufacturer="SanDisk" ;;
+              0x00001b) manufacturer="Samsung" ;;
+              0x00001d) manufacturer="AData" ;;
+              0x000027) manufacturer="Phison" ;;
+              0x000028) manufacturer="Lexar" ;;
+              0x000031) manufacturer="Silicon Power" ;;
+              0x000041) manufacturer="Kingston" ;;
+              0x000074) manufacturer="Transcend" ;;
+              0x000082) manufacturer="Sony" ;;
+              0x00009c) manufacturer="Angelbird" ;;
+              0x0000fe) manufacturer="Micron" ;;
+              *) manufacturer="Unknown ($manfid)" ;;
+            esac
+            echo " - Manufacturer: $manufacturer"
+          fi
+          if [ -f /sys/block/mmcblk0/size ]; then
+            size_bytes=$(( $(cat /sys/block/mmcblk0/size) * 512 ))
+            size_gb=$(awk "BEGIN {printf \"%.1f\", $size_bytes/1024/1024/1024}")
+            echo " - Card size: ${size_gb} GB"
+          fi
+          echo ""
+
+          echo "Inode Usage:"
+          df -i / | tail -1 | awk '{print "  Used: " $3 "/" $2 " (" $5 ")"}'
+          echo ""
+
       - name: Temperature
         run: |
           if [ -f /sys/class/thermal/thermal_zone0/temp ]; then

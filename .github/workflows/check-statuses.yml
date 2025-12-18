@@ -15,7 +15,7 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm install
-      - run: node analysis/check-cineworld-ids.js
+      - run: node node_modules/scripts/analysis/check-cineworld-ids.js
 
   check_curzon:
     name: Check Curzon
@@ -29,7 +29,7 @@ jobs:
           node-version-file: .node-version
       - run: npm install
       - run: npx playwright install --with-deps
-      - run: node analysis/check-curzon-ids.js
+      - run: node node_modules/scripts/analysis/check-curzon-ids.js
 
   check_everyman:
     name: Check Everyman
@@ -42,7 +42,7 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm install
-      - run: node analysis/check-everyman-ids.js
+      - run: node node_modules/scripts/analysis/check-everyman-ids.js
 
   check_myvue:
     name: Check Vue
@@ -55,7 +55,7 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm install
-      - run: node analysis/check-myvue-ids.js
+      - run: node node_modules/scripts/analysis/check-myvue-ids.js
 
   check_odeon:
     name: Check Odeon
@@ -69,7 +69,7 @@ jobs:
           node-version-file: .node-version
       - run: npm install
       - run: npx playwright install --with-deps
-      - run: node analysis/check-odeon-ids.js
+      - run: node node_modules/scripts/analysis/check-odeon-ids.js
 
   check_omniplex:
     name: Check Omniplex
@@ -82,7 +82,7 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm install
-      - run: node analysis/check-omniplex-ids.js
+      - run: node node_modules/scripts/analysis/check-omniplex-ids.js
 
   check_picturehouse:
     name: Check Picturehouse
@@ -96,4 +96,4 @@ jobs:
           node-version-file: .node-version
       - run: npm install
       - run: npx playwright install --with-deps
-      - run: node analysis/check-picturehouse-ids.js
+      - run: node node_modules/scripts/analysis/check-picturehouse-ids.js

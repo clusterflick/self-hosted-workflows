@@ -1,0 +1,28 @@
+on:
+  workflow_dispatch:
+
+name: Check SD card health
+
+jobs:
+  check-sd-card:
+    name: Check SD card on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - self-hosted-pi4-1
+          - self-hosted-pi4-2
+          - self-hosted-pi4-3
+          - self-hosted-pi4-4
+          - self-hosted-pi4-5
+    steps:
+      - name: Clone agnostics repo
+        run: git clone https://github.com/raspberrypi-ui/agnostics.git
+
+      - name: Modify sdtest.sh to use local fio file
+        run: sed -i 's|/usr/share/agnostics/sd_bench.fio|./sd_bench.fio|g' ./agnostics/data/sdtest.sh
+
+      - name: Run SD card test
+        working-directory: ./agnostics/data
+        run: sh sdtest.sh

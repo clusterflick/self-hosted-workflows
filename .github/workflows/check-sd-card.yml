@@ -16,6 +16,7 @@ jobs:
           - self-hosted-pi4-3
           - self-hosted-pi4-4
           - self-hosted-pi4-5
+          - self-hosted-pi4-6
     steps:
       - name: Clone agnostics repo
         run: git clone https://github.com/raspberrypi-ui/agnostics.git

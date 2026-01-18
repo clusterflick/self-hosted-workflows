@@ -19,7 +19,9 @@ jobs:
           - self-hosted-pi4-6
     steps:
       - name: Clone agnostics repo
-        run: git clone https://github.com/raspberrypi-ui/agnostics.git
+        run: |
+          rm -rf ./agnostics
+          git clone https://github.com/raspberrypi-ui/agnostics.git
 
       - name: Modify sdtest.sh to use local fio file
         run: sed -i 's|/usr/share/agnostics/sd_bench.fio|./sd_bench.fio|g' ./agnostics/data/sdtest.sh
@@ -27,3 +29,6 @@ jobs:
       - name: Run SD card test
         working-directory: ./agnostics/data
         run: sh sdtest.sh
+
+      - name: Cleanup
+        run: rm -rf ./agnostics

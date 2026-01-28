@@ -1,13 +1,13 @@
 on:
   schedule:
-    - cron: '0 12 * * 1'  # 12:00 UTC every Monday
+    - cron: '0 18 * * 1'  # 18:00 UTC every Monday
   workflow_dispatch:
 
-name: Free space on runners
+name: Reset dependencies on runners
 
 jobs:
-  free-space:
-    name: Free space on ${{ matrix.runner }}
+  reset-dependencies:
+    name: Reset dependencies on ${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -21,9 +21,19 @@ jobs:
           - self-hosted-pi4-6
     steps:
       - uses: actions/checkout@v3
+
       - uses: actions/setup-node@v3
         with:
           node-version-file: .node-version
-      - run: npm cache verify
-      - run: npm cache clean --force
-      - run: npm cache verify
+
+      - name: Clear npm cache
+        run: |
+          npm cache verify
+          npm cache clean --force
+          npm cache verify
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright and dependencies
+        run: npx playwright install --with-deps

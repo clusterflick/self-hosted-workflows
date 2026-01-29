@@ -9,6 +9,8 @@ jobs:
   reset-dependencies:
     name: Reset dependencies on ${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: $HOME/.cache/playwright-browsers
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +33,9 @@ jobs:
           npm cache verify
           npm cache clean --force
           npm cache verify
+
+      - name: Clear Playwright cache
+        run: npx playwright uninstall --all
 
       - name: Install dependencies
         run: npm install

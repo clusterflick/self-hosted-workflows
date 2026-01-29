@@ -7,6 +7,8 @@ jobs:
   runner-stats:
     name: Stats for ${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: $HOME/.cache/playwright-browsers
     strategy:
       fail-fast: false
       matrix:

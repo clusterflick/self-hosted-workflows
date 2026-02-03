@@ -17,28 +17,35 @@ its specific identifier (e.g., `self-hosted-pi4-1`).
 
 ## Workflows
 
-### Check Venue Statuses
+### Reset Dependencies on Runners
+
+**Trigger:** Scheduled (Mondays at 18:00 UTC) or manual
+
+Performs maintenance on all self-hosted runners by:
+
+- Clearing npm cache
+- Uninstalling all Playwright browsers
+- Reinstalling dependencies and Playwright
+
+### Check SD Card Health
 
 **Trigger:** Manual (`workflow_dispatch`)
 
-Validates cinema venue IDs across multiple cinema chains:
+Runs the Raspberry Pi SD card benchmark test on all runners to check for
+potential SD card degradation or failures.
 
-| Venue        | Runner                 |
-| ------------ | ---------------------- |
-| Cineworld    | Self-hosted            |
-| Curzon       | Ubuntu (GitHub-hosted) |
-| Everyman     | Ubuntu (GitHub-hosted) |
-| Vue          | Self-hosted            |
-| Odeon        | Self-hosted            |
-| Omniplex     | Ubuntu (GitHub-hosted) |
-| Picturehouse | Self-hosted            |
+### Runner Stats
 
-### Free Space on Runners
+**Trigger:** Manual (`workflow_dispatch`)
 
-**Trigger:** Scheduled (Mondays at 12:00 UTC) or manual
+Gathers system information from all runners including:
 
-Performs maintenance on all self-hosted runners by cleaning the npm cache to
-reclaim disk space.
+- System overview (kernel, OS, architecture)
+- CPU and memory usage
+- Disk usage and inode stats
+- SD card health checks
+- Temperature readings
+- Process counts
 
 ## Usage
 

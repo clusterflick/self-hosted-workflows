@@ -9,8 +9,6 @@ jobs:
   reset-dependencies:
     name: Reset dependencies on ${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: $HOME/.cache/playwright-browsers
     strategy:
       fail-fast: false
       matrix:
@@ -23,6 +21,9 @@ jobs:
           - self-hosted-pi4-6
     steps:
       - uses: actions/checkout@v3
+
+      - name: Set Playwright path
+        run: echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/playwright-browsers" >> $GITHUB_ENV
 
       - uses: actions/setup-node@v3
         with:

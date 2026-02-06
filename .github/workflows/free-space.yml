@@ -20,12 +20,12 @@ jobs:
           - self-hosted-pi4-5
           - self-hosted-pi4-6
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set Playwright path
         run: echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/playwright-browsers" >> $GITHUB_ENV
 
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
 

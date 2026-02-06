@@ -36,7 +36,12 @@ jobs:
           npm cache verify
 
       - name: Clear Playwright cache
-        run: npx playwright uninstall --all
+        run: |
+          if [ -d "$PLAYWRIGHT_BROWSERS_PATH" ]; then
+            npx playwright uninstall --all
+          else
+            echo "No Playwright browsers directory found, skipping uninstall"
+          fi
 
       - name: Install dependencies
         run: npm install

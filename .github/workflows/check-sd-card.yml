@@ -3,6 +3,8 @@ on:
 
 name: Check SD card health
 
+permissions: {}
+
 jobs:
   check-sd-card:
     name: Check SD card on ${{ matrix.runner }}

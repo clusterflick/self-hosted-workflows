@@ -3,6 +3,8 @@ on:
 
 name: Runner stats
 
+permissions: {}
+
 jobs:
   runner-stats:
     name: Stats for ${{ matrix.runner }}

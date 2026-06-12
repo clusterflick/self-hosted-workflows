@@ -43,6 +43,9 @@ jobs:
             echo "No Playwright browsers directory found, skipping uninstall"
           fi
 
+      - name: Trim filesystem
+        run: sudo fstrim -av
+
       - name: Install dependencies
         run: npm install
 

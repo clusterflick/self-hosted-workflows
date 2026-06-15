@@ -8,8 +8,6 @@ permissions: {}
 env:
   MOUNT: /mnt/runner-work
   WORK: /home/alib/actions-runner/_work
-  # Warn (don't fail) when a drive that exposes a life attribute drops below this.
-  LIFE_WARN_PCT: 20
 
 jobs:
   check-storage:
@@ -118,26 +116,20 @@ jobs:
           fi
           echo "Reallocated sectors: 0"
 
-      - name: SMART life remaining (warn only)
+      - name: SMART life/wear attributes (review only)
         shell: bash
         run: |
-          attrs="$(sudo smartctl -A -d sat /dev/sda)"
-          # Try known life attributes in order: Kingston/Gigabyte SSD_Life_Left (raw %),
-          # then Samsung Wear_Leveling_Count (normalized VALUE = % of endurance left).
-          pct="$(echo "$attrs" | awk '$2=="SSD_Life_Left"{print $NF; exit}')"
-          src="SSD_Life_Left (raw)"
-          if [ -z "$pct" ]; then
-            pct="$(echo "$attrs" | awk '$2=="Wear_Leveling_Count"{print $4; exit}')"
-            src="Wear_Leveling_Count (value)"
-          fi
-          if [ -z "$pct" ]; then
-            echo "::warning::No recognised life-remaining attribute on /dev/sda. Review SMART dump."
-          else
-            echo "Life remaining: ${pct}% via ${src}"
-            if [ "$pct" -lt "$LIFE_WARN_PCT" ] 2>/dev/null; then
-              echo "::warning::Drive life remaining ${pct}% (< ${LIFE_WARN_PCT}%) on /dev/sda."
-            fi
-          fi
+          # Life/wear values are inconsistent across our mixed drive models:
+          # A400 SSD_Life_Left uses the RAW value (88), UV400 uses the VALUE column (098)
+          # while its raw is garbage (2), Samsung uses Wear_Leveling_Count, the Origin
+          # exposes none. No single threshold is reliable — print for manual review.
+          # Automated failure is handled by the SMART overall-health (-H) and
+          # reallocated-sectors checks instead.
+          echo "Life/wear attributes on /dev/sda (review by eye):"
+          sudo smartctl -A -d sat /dev/sda \
+            | grep -iE "wear_leveling|life_left|wearout|lifetime_writes" \
+            | sed 's/^/  /' \
+            || echo "  none exposed (e.g. the Origin/Phison OEM drive)"
 
       - name: Full SMART dump (manual review)
         shell: bash

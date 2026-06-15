@@ -121,9 +121,17 @@ And then run
 sudo chown -R alib:alib /mnt/runner-work
 ```
 
-### Set up TRIM using systemd service
+### Set up TRIM
 ```sh
-sudo tee /etc/systemd/system/ssd-trim-enable.service <<'EOF'
+sudo tee /usr/local/sbin/enable-ssd-trim.sh > /dev/null <<'EOF'
+#!/bin/sh
+echo unmap > /sys/block/sda/device/scsi_disk/0:0:0:0/provisioning_mode
+EOF
+sudo chmod 755 /usr/local/sbin/enable-ssd-trim.sh
+```
+
+```sh
+sudo tee /etc/systemd/system/ssd-trim-enable.service > /dev/null <<'EOF'
 [Unit]
 Description=Enable TRIM (unmap) on USB SSD
 After=local-fs.target
@@ -131,7 +139,7 @@ Wants=local-fs.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'echo unmap > /sys/block/sda/device/scsi_disk/0:0:0:0/provisioning_mode'
+ExecStart=/usr/local/sbin/enable-ssd-trim.sh
 
 [Install]
 WantedBy=multi-user.target
@@ -190,7 +198,8 @@ sudo visudo -f /etc/sudoers.d/runner-monitoring
 and paste in
 
 ```
-alib ALL=(ALL) NOPASSWD: /usr/sbin/fstrim, /usr/sbin/smartctl
+alib ALL=(ALL) NOPASSWD: /usr/sbin/fstrim, /usr/sbin/smartctl, /usr/local/sbin/enable-ssd-trim.sh
+
 ```
 
 ### Setup GitHub Action

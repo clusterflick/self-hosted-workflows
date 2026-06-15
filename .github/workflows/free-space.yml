@@ -48,7 +48,9 @@ jobs:
           fi
 
       - name: Trim filesystem
-        run: sudo fstrim -av
+        run: |
+          sudo /usr/local/sbin/enable-ssd-trim.sh
+          sudo fstrim -av
 
       - name: Install dependencies
         run: npm install

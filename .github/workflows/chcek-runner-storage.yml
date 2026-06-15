@@ -44,16 +44,19 @@ jobs:
             exit 1
           fi
 
-      - name: TRIM supported on the SSD
+      - name: TRIM status (warn only)
         shell: bash
         run: |
-          # Check the runtime effect, not the rule file: a present-but-unapplied
-          # udev rule passes a file check but DISC-MAX stays 0.
+          # TRIM works via these ASM1153 adapters but the kernel disables it
+          # ('provisioning_mode=disabled') after an occasional discard error.
+          # The boot service and weekly cleanup re-enable it, so a 'disabled'
+          # reading here is not necessarily a problem — it self-heals at the
+          # next cleanup. Warn so it's visible without failing the run.
           dmax="$(lsblk -dn -o DISC-MAX /dev/sda | tr -d ' ')"
-          echo "sda DISC-MAX: $dmax"
+          mode="$(cat /sys/block/sda/device/scsi_disk/0:0:0:0/provisioning_mode 2>/dev/null || echo '?')"
+          echo "sda DISC-MAX: $dmax | provisioning_mode: $mode"
           if [ -z "$dmax" ] || [ "$dmax" = "0B" ] || [ "$dmax" = "0" ]; then
-            echo "::error::TRIM not active on /dev/sda (DISC-MAX=$dmax). udev rule missing or not applied — reboot or 'udevadm control --reload-rules && udevadm trigger'."
-            exit 1
+            echo "::warning::TRIM currently inactive on /dev/sda (mode=$mode). Will be re-enabled at next cleanup; investigate if it persists across multiple cleanups."
           fi
 
       - name: Default npm cache is unused

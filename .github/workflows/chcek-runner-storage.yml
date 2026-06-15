@@ -124,18 +124,19 @@ jobs:
           attrs="$(sudo smartctl -A -d sat /dev/sda)"
           # Try known life attributes in order: Kingston/Gigabyte SSD_Life_Left (raw %),
           # then Samsung Wear_Leveling_Count (normalized VALUE = % of endurance left).
-          pct=""
-          if echo "$attrs" | awk '$2=="SSD_Life_Left"{exit 0} END{exit 1}'; then
-            pct="$(echo "$attrs" | awk '$2=="SSD_Life_Left"{print $NF}')"
-            echo "Life attribute: SSD_Life_Left raw = ${pct}%"
-          elif echo "$attrs" | awk '$2=="Wear_Leveling_Count"{exit 0} END{exit 1}'; then
-            pct="$(echo "$attrs" | awk '$2=="Wear_Leveling_Count"{print $4}')"
-            echo "Life attribute: Wear_Leveling_Count VALUE = ${pct}% endurance remaining"
-          else
-            echo "::warning::No recognised life-remaining attribute on /dev/sda (e.g. the Origin/Phison OEM drive). Review the full SMART dump below manually."
+          pct="$(echo "$attrs" | awk '$2=="SSD_Life_Left"{print $NF; exit}')"
+          src="SSD_Life_Left (raw)"
+          if [ -z "$pct" ]; then
+            pct="$(echo "$attrs" | awk '$2=="Wear_Leveling_Count"{print $4; exit}')"
+            src="Wear_Leveling_Count (value)"
           fi
-          if [ -n "$pct" ] && [ "$pct" -lt "$LIFE_WARN_PCT" ] 2>/dev/null; then
-            echo "::warning::Drive life remaining is ${pct}% (< ${LIFE_WARN_PCT}%) on /dev/sda — plan a replacement."
+          if [ -z "$pct" ]; then
+            echo "::warning::No recognised life-remaining attribute on /dev/sda. Review SMART dump."
+          else
+            echo "Life remaining: ${pct}% via ${src}"
+            if [ "$pct" -lt "$LIFE_WARN_PCT" ] 2>/dev/null; then
+              echo "::warning::Drive life remaining ${pct}% (< ${LIFE_WARN_PCT}%) on /dev/sda."
+            fi
           fi
 
       - name: Full SMART dump (manual review)

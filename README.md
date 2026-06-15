@@ -121,12 +121,28 @@ And then run
 sudo chown -R alib:alib /mnt/runner-work
 ```
 
-### Set up TRIM udev rule
+### Set up TRIM using systemd service
+```sh
+sudo tee /etc/systemd/system/ssd-trim-enable.service <<'EOF'
+[Unit]
+Description=Enable TRIM (unmap) on USB SSD
+After=local-fs.target
+Wants=local-fs.target
 
-Update `/etc/udev/rules.d/10-trim-usb.rules` with:
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo unmap > /sys/block/sda/device/scsi_disk/0:0:0:0/provisioning_mode'
 
+[Install]
+WantedBy=multi-user.target
+EOF
 ```
-ACTION=="add|change", ATTRS{idVendor}=="174c", ATTRS{idProduct}=="55aa", SUBSYSTEM=="scsi_disk", ATTR{provisioning_mode}="unmap"
+
+Enable, start, and test the new service
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable ssd-trim-enable.service
+sudo systemctl start ssd-trim-enable.service
 ```
 
 And then run

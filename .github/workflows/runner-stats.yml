@@ -5,6 +5,9 @@ name: Runner stats
 
 permissions: {}
 
+env:
+  MOUNT: /mnt/runner-work
+
 jobs:
   runner-stats:
     name: Stats for ${{ matrix.runner }}
@@ -52,7 +55,43 @@ jobs:
           echo "  Swap Free: $(grep SwapFree /proc/meminfo | awk '{print $2/1024 " MB"}')"
           echo ""
 
-      - name: Disk usage
+      - name: SSD disk usage
+        run: |
+          echo "Disk usage summary for runner SSD ($MOUNT):"
+          df -h "$MOUNT" | tail -1 | awk '{print "  Size: " $2 "\n  Used: " $3 " (" $5 ")\n  Available: " $4}'
+          echo ""
+
+      - name: SSD usage breakdown
+        run: |
+          echo "Top consumers on $MOUNT:"
+          sudo du -h --max-depth=2 "$MOUNT" 2>/dev/null | sort -rh | head -15
+          echo ""
+
+      - name: Cache sizes
+        run: |
+          echo "Cache sizes on SSD:"
+          for d in "$MOUNT/.npm-cache" "$MOUNT/playwright-browsers"; do
+            if [ -d "$d" ]; then
+              printf "  %s: %s\n" "$d" "$(du -sh "$d" 2>/dev/null | cut -f1)"
+            else
+              printf "  %s: (absent)\n" "$d"
+            fi
+          done
+          echo ""
+
+      - name: SSD inode usage
+        run: |
+          echo "Inode usage for $MOUNT:"
+          df -i "$MOUNT" | tail -1 | awk '{print "  Inodes: " $2 "\n  Used: " $3 " (" $5 ")\n  Free: " $4}'
+          echo ""
+
+      - name: SSD identity
+        run: |
+          echo "SSD identity:"
+          sudo smartctl -i -d sat /dev/sda | grep -E "Device Model|Serial Number|User Capacity" | sed 's/^/  /'
+          echo ""
+
+      - name: SD card usage
         run: |
           df -h
           echo ""

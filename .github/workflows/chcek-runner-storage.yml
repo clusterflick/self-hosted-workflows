@@ -1,0 +1,145 @@
+on:
+  workflow_dispatch:
+
+name: Check runner storage health
+
+permissions: {}
+
+env:
+  MOUNT: /mnt/runner-work
+  WORK: /home/alib/actions-runner/_work
+  # Warn (don't fail) when a drive that exposes a life attribute drops below this.
+  LIFE_WARN_PCT: 20
+
+jobs:
+  check-storage:
+    name: Check storage on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - self-hosted-pi4-1
+          - self-hosted-pi4-2
+          - self-hosted-pi4-3
+          - self-hosted-pi4-4
+          - self-hosted-pi4-5
+          - self-hosted-pi4-6
+    steps:
+      - name: SSD mounted on /dev/sda1
+        shell: bash
+        run: |
+          src="$(findmnt -n -o SOURCE --target "$MOUNT" 2>/dev/null || true)"
+          echo "Mount source for $MOUNT: ${src:-<none>}"
+          if [ "$src" != "/dev/sda1" ]; then
+            echo "::error::$MOUNT is not mounted from /dev/sda1 (got '${src:-<none>}'). SSD missing or not mounted?"
+            exit 1
+          fi
+
+      - name: Runner _work bound to the SSD
+        shell: bash
+        run: |
+          src="$(findmnt -n -o SOURCE --target "$WORK" 2>/dev/null || true)"
+          echo "Mount source for $WORK: ${src:-<none>}"
+          if [ "$src" != "/dev/sda1" ]; then
+            echo "::error::$WORK is not on /dev/sda1 (got '${src:-<none>}'). Bind mount did not take — runner may be writing to the SD card."
+            exit 1
+          fi
+
+      - name: TRIM supported on the SSD
+        shell: bash
+        run: |
+          # Check the runtime effect, not the rule file: a present-but-unapplied
+          # udev rule passes a file check but DISC-MAX stays 0.
+          dmax="$(lsblk -dn -o DISC-MAX /dev/sda | tr -d ' ')"
+          echo "sda DISC-MAX: $dmax"
+          if [ -z "$dmax" ] || [ "$dmax" = "0B" ] || [ "$dmax" = "0" ]; then
+            echo "::error::TRIM not active on /dev/sda (DISC-MAX=$dmax). udev rule missing or not applied — reboot or 'udevadm control --reload-rules && udevadm trigger'."
+            exit 1
+          fi
+
+      - name: Default npm cache is unused
+        shell: bash
+        run: |
+          # Real cache content lives in _cacache/{index-v5,content-v2}.
+          # A bare ~/.npm with only _logs/config is fine.
+          bad=0
+          for d in "$HOME/.npm/_cacache/index-v5" "$HOME/.npm/_cacache/content-v2"; do
+            if [ -d "$d" ] && [ -n "$(find "$d" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+              echo "Found cache content in $d:"
+              du -sh "$d" || true
+              bad=1
+            fi
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::Default npm cache ($HOME/.npm/_cacache) contains data — npm is caching to the SD card instead of the SSD. If stale, clear it: rm -rf ~/.npm/_cacache"
+            exit 1
+          fi
+          echo "Default npm cache is empty/unused."
+
+      - name: Default Playwright cache is unused
+        shell: bash
+        run: |
+          dir="$HOME/.cache/playwright-browsers"
+          # Look for actual browser build dirs (chromium-*, firefox-*, webkit-*, ffmpeg-*).
+          if [ -d "$dir" ] && [ -n "$(find "$dir" -mindepth 1 -maxdepth 1 \
+                \( -name 'chromium*' -o -name 'firefox*' -o -name 'webkit*' -o -name 'ffmpeg*' \) \
+                -print -quit 2>/dev/null)" ]; then
+            echo "Found browser builds in $dir:"
+            ls -1 "$dir" || true
+            echo "::error::Default Playwright cache ($dir) contains browser builds — Playwright is installing to the SD card instead of the SSD. If stale, clear it: rm -rf $dir"
+            exit 1
+          fi
+          echo "Default Playwright cache is empty/unused."
+
+      - name: SMART overall health
+        shell: bash
+        run: |
+          out="$(sudo smartctl -H -d sat /dev/sda)"
+          echo "$out"
+          if ! echo "$out" | grep -qi "test result: PASSED"; then
+            echo "::error::SMART overall-health self-assessment is not PASSED on /dev/sda."
+            exit 1
+          fi
+
+      - name: SMART reallocated sectors
+        shell: bash
+        run: |
+          # Attribute 5 = Reallocated_Sector_Ct. Not all drives expose it; absence is OK.
+          line="$(sudo smartctl -A -d sat /dev/sda | awk '$1==5 {print; found=1} END{if(!found) exit 3}')" || {
+            echo "No Reallocated_Sector_Ct attribute exposed by this drive — skipping (overall health check still applies)."
+            exit 0
+          }
+          echo "$line"
+          raw="$(echo "$line" | awk '{print $NF}')"
+          if [ "$raw" -gt 0 ] 2>/dev/null; then
+            echo "::error::Reallocated sector count is $raw (>0) on /dev/sda — drive is developing bad blocks."
+            exit 1
+          fi
+          echo "Reallocated sectors: 0"
+
+      - name: SMART life remaining (warn only)
+        shell: bash
+        run: |
+          attrs="$(sudo smartctl -A -d sat /dev/sda)"
+          # Try known life attributes in order: Kingston/Gigabyte SSD_Life_Left (raw %),
+          # then Samsung Wear_Leveling_Count (normalized VALUE = % of endurance left).
+          pct=""
+          if echo "$attrs" | awk '$2=="SSD_Life_Left"{exit 0} END{exit 1}'; then
+            pct="$(echo "$attrs" | awk '$2=="SSD_Life_Left"{print $NF}')"
+            echo "Life attribute: SSD_Life_Left raw = ${pct}%"
+          elif echo "$attrs" | awk '$2=="Wear_Leveling_Count"{exit 0} END{exit 1}'; then
+            pct="$(echo "$attrs" | awk '$2=="Wear_Leveling_Count"{print $4}')"
+            echo "Life attribute: Wear_Leveling_Count VALUE = ${pct}% endurance remaining"
+          else
+            echo "::warning::No recognised life-remaining attribute on /dev/sda (e.g. the Origin/Phison OEM drive). Review the full SMART dump below manually."
+          fi
+          if [ -n "$pct" ] && [ "$pct" -lt "$LIFE_WARN_PCT" ] 2>/dev/null; then
+            echo "::warning::Drive life remaining is ${pct}% (< ${LIFE_WARN_PCT}%) on /dev/sda — plan a replacement."
+          fi
+
+      - name: Full SMART dump (manual review)
+        shell: bash
+        run: |
+          echo "Disk model / serial / wear — review by eye, especially for drives without a life attribute:"
+          sudo smartctl -a -d sat /dev/sda

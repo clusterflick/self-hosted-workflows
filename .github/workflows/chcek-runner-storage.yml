@@ -105,19 +105,39 @@ jobs:
 
       - name: SMART reallocated sectors
         shell: bash
+        env:
+          RUNNER_LABEL: ${{ matrix.runner }}
         run: |
           # Attribute 5 = Reallocated_Sector_Ct. Not all drives expose it; absence is OK.
+          #
+          # A drive that has already remapped a few sectors is fine as long as the
+          # count stays *stable* — what signals a failing drive is the count
+          # climbing. We record a per-runner baseline below and only fail when the
+          # current count rises above it. To accept a new higher count, bump the
+          # runner's baseline here (and note the date/reason).
+          declare -A BASELINE=(
+            [self-hosted-pi4-3]=2   # 2026-06-19: A400 SSD, stable at 2 remapped sectors
+          )
+          base="${BASELINE[$RUNNER_LABEL]:-0}"
+
           line="$(sudo smartctl -A -d sat /dev/sda | awk '$1==5 {print; found=1} END{if(!found) exit 3}')" || {
             echo "No Reallocated_Sector_Ct attribute exposed by this drive — skipping (overall health check still applies)."
             exit 0
           }
           echo "$line"
           raw="$(echo "$line" | awk '{print $NF}')"
-          if [ "$raw" -gt 0 ] 2>/dev/null; then
-            echo "::error::Reallocated sector count is $raw (>0) on /dev/sda — drive is developing bad blocks."
+          echo "Reallocated sectors: $raw (baseline for $RUNNER_LABEL: $base)"
+          if ! [ "$raw" -ge 0 ] 2>/dev/null; then
+            echo "::warning::Could not parse reallocated sector count ('$raw') on /dev/sda — review manually."
+            exit 0
+          fi
+          if [ "$raw" -gt "$base" ]; then
+            echo "::error::Reallocated sector count is $raw on /dev/sda — above the recorded baseline of $base. Drive is developing new bad blocks; investigate or replace."
             exit 1
           fi
-          echo "Reallocated sectors: 0"
+          if [ "$raw" -gt 0 ]; then
+            echo "::warning::Reallocated sector count is $raw on /dev/sda — stable at/below baseline $base. Replace the drive if this climbs further."
+          fi
 
       - name: SMART life/wear attributes (review only)
         shell: bash

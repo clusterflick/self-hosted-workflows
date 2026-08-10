@@ -26,6 +26,13 @@ Performs maintenance on all self-hosted runners by:
 - Clearing npm cache
 - Uninstalling all Playwright browsers
 - Reinstalling dependencies and Playwright
+- Installing the Camoufox browser if it is missing, and failing if the install
+  it finds is incomplete
+
+This is how the Pi runners get their Camoufox browser: it is a separate ~650MB
+download that `npm install` does not fetch. It is only fetched when absent, so
+running this workflow never upgrades a working install. The matrix covers the
+Pis only — the macOS runners are provisioned by hand.
 
 ### Check runner storage health
 
@@ -92,7 +99,21 @@ sudo apt install smartmontools -y
 # https://github.com/nvm-sh/nvm
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 bash
-nvm install 22
+# Match `.node-version` in clusterflick/scripts. Jobs get their own Node from
+# actions/setup-node, so this is what manual runs on the box use - but it must
+# still be at least 22.12, below which `require()` of an ESM package (such as
+# camoufox-js) throws.
+nvm install 24
+```
+
+### Install browser dependencies
+
+Camoufox ships its own patched Firefox but relies on the system libraries
+Playwright's Firefox needs, and on Xvfb for its virtual display.
+
+```sh
+npx playwright@latest install-deps firefox
+sudo apt install xvfb -y
 ```
 
 ### Set up the SSD
@@ -122,6 +143,7 @@ sudo chown -R alib:alib /mnt/runner-work
 ```
 
 ### Set up TRIM
+
 ```sh
 sudo tee /usr/local/sbin/enable-ssd-trim.sh > /dev/null <<'EOF'
 #!/bin/sh
@@ -147,6 +169,7 @@ EOF
 ```
 
 Enable, start, and test the new service
+
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable ssd-trim-enable.service
@@ -179,6 +202,33 @@ Update `~/actions-runner/.env` with:
 ```
 RUNNER_CACHE_ROOT=/mnt/runner-work
 ```
+
+### Install the Camoufox browser
+
+Some retrieves through Camoufox, whose browser is a ~650MB download that is
+**not** installed by `npm install`. The data pipeline never fetches it —
+`clusterflick/.github/setup-cache-paths` points `CAMOUFOX_INSTALL_DIR` at the
+SSD, and the retrieve job fails fast if the browser isn't there.
+
+On a Pi, run the **Reset dependencies on runners** workflow; it installs
+Camoufox as part of its run. To do it by hand instead — or on the macOS runners,
+which that workflow doesn't cover — use the same install directory the jobs will
+use, from any repo that depends on `clusterflick/scripts`:
+
+```sh
+export CAMOUFOX_INSTALL_DIR="$RUNNER_CACHE_ROOT/camoufox"
+./node_modules/.bin/camoufox-js fetch
+node -e 'require("camoufox-js/dist/pkgman.js").launchPath()'
+```
+
+The last line is the check that matters: `camoufox-js fetch` takes the newest
+GitHub release including prereleases, and a broken build has shipped before,
+extracting fonts and config with no browser binary. `launchPath()` resolves the
+binary itself and throws when it isn't there.
+
+The install directory is always a plain function of the runner's own
+`RUNNER_CACHE_ROOT`, so a host with several runners gets one install each.
+Repeat the above per runner.
 
 ### Confirm EEPROM boot order
 

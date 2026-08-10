@@ -57,3 +57,28 @@ jobs:
 
       - name: Install Playwright and dependencies
         run: npx playwright install --with-deps
+
+      - name: Install Camoufox browser
+        # Camoufox's browser is a ~650MB download that `npm install` does not
+        # fetch, and it lives outside the Playwright browsers directory the step
+        # above manages - so nothing else here installs or replaces it.
+        #
+        # Only fetched when it's missing or the installed version is one the
+        # package no longer supports. `camoufox-js fetch` always takes the newest
+        # GitHub release, including prereleases, so re-fetching an install that
+        # already works would be an unattended upgrade onto whatever shipped
+        # last - and a broken build has shipped before.
+        run: |
+          if node -e 'require("camoufox-js/dist/pkgman.js").camoufoxPath(false)' 2>/dev/null; then
+            echo "Camoufox already installed at $CAMOUFOX_INSTALL_DIR"
+          else
+            echo "Camoufox missing or unsupported - fetching"
+            ./node_modules/.bin/camoufox-js fetch
+          fi
+
+      - name: Verify the Camoufox install is complete
+        # A release has extracted to fonts and config with no browser binary
+        # before, which `camoufoxPath` alone can't tell from a good install.
+        # `launchPath` resolves the binary itself and throws when it isn't there,
+        # so a bad build fails here rather than in a nightly retrieve.
+        run: node -e 'require("camoufox-js/dist/pkgman.js").launchPath()'

@@ -1,0 +1,114 @@
+on:
+  schedule:
+    - cron: "0 10 * * *" # 10:00 UTC daily, clear of the 03:00/15:00 retrieves
+  workflow_dispatch:
+
+name: Check runner network health
+
+permissions: {}
+
+jobs:
+  check-network:
+    name: Check network on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - self-hosted-pi4-1
+          - self-hosted-pi4-2
+          - self-hosted-pi4-3
+          - self-hosted-pi4-4
+          - self-hosted-pi4-5
+          - self-hosted-pi4-6
+    steps:
+      - name: RA filter loaded
+        shell: bash
+        run: |
+          # The Community Fibre router's second network (ea:9f:80:d1:4e:53)
+          # advertises 2a02:6b6f:f931:3f40::/64 through the Deco's IPv6
+          # passthrough but never answers on this segment. Flows routed or
+          # sourced through it blackhole and the browser falls back to IPv4,
+          # which TicketSource blocks. ra-filter.service drops those RAs.
+          if ! systemctl is-active --quiet ra-filter; then
+            echo "::error::ra-filter.service is not active. See /etc/nftables-ra.nft."
+            exit 1
+          fi
+          sudo nft list table inet ra_filter
+
+      - name: nftables.service not enabled
+        shell: bash
+        run: |
+          # /etc/nftables.conf starts with 'flush ruleset', which would wipe
+          # both the RA filter and Tailscale's rules.
+          state="$(systemctl is-enabled nftables 2>/dev/null || true)"
+          echo "nftables.service: ${state:-<not installed>}"
+          if [ "$state" = "enabled" ]; then
+            echo "::error::nftables.service is enabled - its 'flush ruleset' removes the RA filter and Tailscale's rules."
+            exit 1
+          fi
+
+      - name: Single working IPv6 default route
+        shell: bash
+        run: |
+          routes="$(ip -6 route show default)"
+          echo "$routes"
+          echo "---"
+          ip -6 neigh show dev eth0 | grep router || true
+          if [ -z "$routes" ]; then
+            echo "::error::No IPv6 default route - traffic will fall back to IPv4, which TicketSource blocks."
+            exit 1
+          fi
+          if echo "$routes" | grep -q nexthop; then
+            echo "::error::Multiple IPv6 default routers - a second router is advertising on this segment."
+            exit 1
+          fi
+
+      - name: Every global IPv6 address reaches the internet
+        shell: bash
+        run: |
+          # An address from a router that doesn't forward is the failure this
+          # catches: the browser picks it as a source, gets nothing back and
+          # silently falls back to IPv4.
+          addrs="$(ip -6 -o addr show dev eth0 scope global | awk '{print $4}' | cut -d/ -f1)"
+          if [ -z "$addrs" ]; then
+            echo "::error::No global IPv6 address on eth0."
+            exit 1
+          fi
+          bad=0
+          for a in $addrs; do
+            ip="$(curl -6 -s --connect-timeout 10 --interface "$a" https://www.cloudflare.com/cdn-cgi/trace | sed -n 's/^ip=//p')"
+            if [ "$ip" = "$a" ]; then
+              echo "OK   $a"
+            else
+              echo "FAIL $a (trace returned '${ip:-nothing}')"
+              bad=1
+            fi
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::At least one global IPv6 address cannot reach the internet - remove it (ip -6 addr del) and find the router that advertised it."
+            exit 1
+          fi
+
+      - name: Default connection prefers IPv6
+        shell: bash
+        run: |
+          # What a browser does without being told a family.
+          trace="$(curl -s --connect-timeout 10 https://www.cloudflare.com/cdn-cgi/trace)"
+          echo "$trace" | grep -E '^(ip|colo|loc)='
+          ip="$(echo "$trace" | sed -n 's/^ip=//p')"
+          case "$ip" in
+            *:*) echo "Default egress is IPv6." ;;
+            "") echo "::error::No response from Cloudflare trace."; exit 1 ;;
+            *) echo "::error::Default egress is IPv4 ($ip) - sites that block the house IPv4 (TicketSource) will fail."; exit 1 ;;
+          esac
+
+      - name: IPv4 works
+        shell: bash
+        run: |
+          ip="$(curl -4 -s --connect-timeout 10 https://www.cloudflare.com/cdn-cgi/trace | sed -n 's/^ip=//p')"
+          echo "IPv4 egress: ${ip:-<none>}"
+          if [ -z "$ip" ]; then
+            echo "::error::No IPv4 connectivity."
+            exit 1
+          fi

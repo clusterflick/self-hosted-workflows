@@ -41,6 +41,22 @@ Pis only — the macOS runners are provisioned by hand.
 Runs a series of checks to confirm the harddrive health, as well as confirm the
 runner setup is correctly using the SSD for all work and cache requirements.
 
+### Check runner network health
+
+**Trigger:** Scheduled (daily, 10:00 UTC) or manual
+
+Confirms each Pi reaches the internet over a single working IPv6 router.
+The Community Fibre router's second network advertises a prefix
+(`2a02:6b6f:f931:3f40::/64`) through the Deco's IPv6 passthrough but never
+answers on the Pis' segment. Connections that go through it fail, and the browser
+falls back to the house IPv4, which TicketSource blocks. Each Pi drops those
+advertisements with `ra-filter.service` (`/etc/nftables-ra.nft`). The workflow
+checks that filter is loaded and that `nftables.service` is not enabled, since its
+`flush ruleset` would wipe both the filter and Tailscale's rules. It then checks
+there is exactly one IPv6 default router, that every global IPv6 address reaches
+the internet, that a request with no address family specified leaves over IPv6, and that IPv4 works. It only
+contacts Cloudflare's trace endpoint, never a cinema site.
+
 ### Check SD Card Health (Deprecated)
 
 **Trigger:** Manual (`workflow_dispatch`)

@@ -1,5 +1,13 @@
 # Self-Hosted Workflows
 
+> **[Clusterflick](https://clusterflick.com)** is a free, open-source site
+> listing every film showing in London, from 450+ venues in one search.
+>
+> This repository holds the GitHub Actions workflows that run on Clusterflick's
+> own Raspberry Pi runners. See the
+> [Clusterflick organisation](https://github.com/clusterflick) for how the
+> pieces fit together.
+
 GitHub Actions workflows designed to run on self-hosted runners for the
 Clusterflick project.
 

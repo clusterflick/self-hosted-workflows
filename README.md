@@ -316,6 +316,15 @@ then adjust from what real runs show.
 As for a Pi: see [Get up to date](#get-up-to-date) and
 [Install known dependencies](#install-known-dependencies).
 
+Ubuntu Server also needs a build toolchain, which Raspberry Pi OS and macOS
+already have: some dependencies (such as `better-sqlite3`, used by
+`data-analysed`) compile native code during `npm install`, and fail with
+`gyp ERR! stack Error: not found: make` without it.
+
+```sh
+sudo apt install build-essential -y
+```
+
 ### Install browser system libraries
 
 These are the system packages the browsers need (installed with apt), not the

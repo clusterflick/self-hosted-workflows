@@ -366,9 +366,11 @@ sudo chmod 755 /usr/local/sbin/enable-ssd-trim.sh
 
 ### Passwordless sudo
 
-As for a Pi, plus `apt-get`: the retrieve jobs run
-`npx playwright install chromium --with-deps`, which calls `sudo apt-get` on
-Linux.
+The retrieve jobs run `npx playwright install chromium --with-deps`, which on
+Linux runs `sudo -- sh -c "apt-get ..."`. Without passwordless sudo for that,
+every job fails with `sudo: A terminal is required to authenticate`. Allowing
+`sh` is root in all but name, so grant it outright — the same as the Pis get
+from Raspberry Pi OS's default `/etc/sudoers.d/010_pi-nopasswd`:
 
 ```sh
 sudo visudo -f /etc/sudoers.d/runner-monitoring
@@ -377,8 +379,14 @@ sudo visudo -f /etc/sudoers.d/runner-monitoring
 and paste in
 
 ```
-alib ALL=(ALL) NOPASSWD: /usr/sbin/fstrim, /usr/sbin/smartctl, /usr/local/sbin/enable-ssd-trim.sh, /usr/bin/apt-get
+alib ALL=(ALL) NOPASSWD: ALL
 
+```
+
+Check it the way Playwright will use it:
+
+```sh
+sudo -k; sudo -n sh -c true && echo ok
 ```
 
 ### Pre-install the browsers

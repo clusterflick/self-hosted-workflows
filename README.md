@@ -23,6 +23,9 @@ The workflows in this repository target a cluster of Raspberry Pi 4 devices
 configured as GitHub Actions self-hosted runners. Each runner is labeled with
 its specific identifier (e.g., `self-hosted-pi4-1`).
 
+x86 mini PCs can also host several runners each; see
+[Setting Up an x86 Runner Host](#setting-up-an-x86-runner-host).
+
 ## Workflows
 
 ### Reset Dependencies on Runners
@@ -296,3 +299,157 @@ sudo tailscale up
 
 Update the workflows in this repository to include the new runner in any matrix
 configurations or runner lists as needed.
+
+## Setting Up an x86 Runner Host
+
+A small x86 machine (e.g. a Dell OptiPlex Micro) running Ubuntu Server 24.04
+LTS, hosting several runners at once. Most of the Pi setup above applies; the
+differences are the system NVMe in place of a USB SSD, and several runners
+sharing one host.
+
+Each browser-based retrieve needs roughly 3-4GB of RAM, so size the number of
+runners to the machine's memory and cores (e.g. 4 runners on 6 cores / 16GB),
+then adjust from what real runs show.
+
+### Get up to date and install known dependencies
+
+As for a Pi: see [Get up to date](#get-up-to-date) and
+[Install known dependencies](#install-known-dependencies).
+
+### Install browser system libraries
+
+These are the system packages the browsers need (installed with apt), not the
+browsers themselves — those are downloaded into the cache root in
+[Pre-install the browsers](#pre-install-the-browsers) below. Install the
+libraries for both browsers the retrieves use: Chromium (through Playwright)
+and Firefox (for Camoufox), plus Xvfb.
+
+```sh
+npx playwright@latest install-deps chromium firefox
+sudo apt install xvfb -y
+```
+
+### Create the cache root
+
+The NVMe is the system disk, so there is no partitioning, fstab entry or bind
+mount — each runner's `_work` stays in its own directory. Create one cache
+root, shared by every runner on the host:
+
+```sh
+sudo mkdir -p /srv/runner-cache
+sudo chown alib:alib /srv/runner-cache
+```
+
+Sharing it means one Chromium and one Camoufox install per host rather than one
+per runner. Once installed, jobs only read them, and the npm cache is safe to
+use concurrently. Install both browsers by hand (below) **before** starting the
+runners, so several jobs never race to install into the same path.
+
+### TRIM
+
+Not needed: NVMe TRIM works natively, and Ubuntu's `fstrim.timer` runs weekly
+by default (`systemctl status fstrim.timer`).
+
+The **Reset dependencies on runners** workflow still calls
+`/usr/local/sbin/enable-ssd-trim.sh`, so create a no-op at that path before
+adding this host to its matrix:
+
+```sh
+sudo tee /usr/local/sbin/enable-ssd-trim.sh > /dev/null <<'SCRIPT'
+#!/bin/sh
+# No-op on x86 hosts: the NVMe supports TRIM natively. Exists because the
+# "Reset dependencies on runners" workflow calls this path on every runner.
+exit 0
+SCRIPT
+sudo chmod 755 /usr/local/sbin/enable-ssd-trim.sh
+```
+
+### Passwordless sudo
+
+As for a Pi, plus `apt-get`: the retrieve jobs run
+`npx playwright install chromium --with-deps`, which calls `sudo apt-get` on
+Linux.
+
+```sh
+sudo visudo -f /etc/sudoers.d/runner-monitoring
+```
+
+and paste in
+
+```
+alib ALL=(ALL) NOPASSWD: /usr/sbin/fstrim, /usr/sbin/smartctl, /usr/local/sbin/enable-ssd-trim.sh, /usr/bin/apt-get
+
+```
+
+### Pre-install the browsers
+
+The installs run from a repo that depends on `clusterflick/scripts`, so clone
+one. The repos are public, so HTTPS works without setting up a key:
+
+```sh
+git clone https://github.com/clusterflick/data-retrieved.git ~/data-retrieved
+cd ~/data-retrieved
+npm install
+```
+
+Then, from that directory, download both browsers into the cache root:
+
+```sh
+export RUNNER_CACHE_ROOT=/srv/runner-cache
+export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_CACHE_ROOT/playwright-browsers"
+export CAMOUFOX_INSTALL_DIR="$RUNNER_CACHE_ROOT/camoufox"
+
+npx playwright install chromium
+./node_modules/.bin/camoufox-js fetch
+node -e 'require("camoufox-js/dist/pkgman.js").launchPath()'
+```
+
+As in [Install the Camoufox browser](#install-the-camoufox-browser), the last
+line is the check that matters: it throws if the fetched release has no
+browser binary.
+
+### Setup GitHub Actions runners
+
+Go to
+https://github.com/organizations/clusterflick/settings/actions/runners/new?arch=x64&os=linux
+
+For each runner `N` on the host, unpack the runner into its own directory,
+following the download commands on that page but in `~/actions-runner-N` rather
+than `~/actions-runner`. Each runner needs its own registration token, so
+reload the page between runners. In the CLI:
+
+- Leave runner group default
+- Name: `self-hosted-<host>-N` (e.g. `self-hosted-optiplex-1`)
+- Additional labels: `<host>,self-hosted-<host>-N`
+- Leave work folder default
+
+Update `~/actions-runner-N/.env` with:
+
+```
+RUNNER_CACHE_ROOT=/srv/runner-cache
+```
+
+Then, in each `~/actions-runner-N`:
+
+```sh
+sudo ./svc.sh install
+sudo ./svc.sh start
+sudo ./svc.sh status
+```
+
+### BIOS
+
+Set the machine to power back on after a power cut (on Dell: **Power
+Management → AC Recovery → Power On**).
+
+### Setup Tailscale
+
+As for a Pi: see [Setup Tailscale](#setup-tailscale). Use the host name from
+the runner names (e.g. `sudo tailscale up --hostname=optiplex`), and disable
+key expiry for the machine in the Tailscale admin console.
+
+### Add to maintenance GitHub Actions
+
+Add each runner label to the workflow matrices in this repository. The storage
+checks were written for a Pi's USB SSD at `/dev/sda`, so expect to adapt them
+for a host whose disk is `/dev/nvme0n1`.

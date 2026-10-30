@@ -316,10 +316,13 @@ then adjust from what real runs show.
 As for a Pi: see [Get up to date](#get-up-to-date) and
 [Install known dependencies](#install-known-dependencies).
 
-### Install browser dependencies
+### Install browser system libraries
 
-Install the system libraries for both browsers the retrieves use: Chromium
-(through Playwright) and Firefox (for Camoufox), plus Xvfb.
+These are the system packages the browsers need (installed with apt), not the
+browsers themselves — those are downloaded into the cache root in
+[Pre-install the browsers](#pre-install-the-browsers) below. Install the
+libraries for both browsers the retrieves use: Chromium (through Playwright)
+and Firefox (for Camoufox), plus Xvfb.
 
 ```sh
 npx playwright@latest install-deps chromium firefox
@@ -380,8 +383,16 @@ alib ALL=(ALL) NOPASSWD: /usr/sbin/fstrim, /usr/sbin/smartctl, /usr/local/sbin/e
 
 ### Pre-install the browsers
 
-From any repo that depends on `clusterflick/scripts` (e.g. a clone of
-`data-retrieved` after `npm install`):
+The installs run from a repo that depends on `clusterflick/scripts`, so clone
+one. The repos are public, so HTTPS works without setting up a key:
+
+```sh
+git clone https://github.com/clusterflick/data-retrieved.git ~/data-retrieved
+cd ~/data-retrieved
+npm install
+```
+
+Then, from that directory, download both browsers into the cache root:
 
 ```sh
 export RUNNER_CACHE_ROOT=/srv/runner-cache

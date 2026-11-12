@@ -100,20 +100,14 @@ jobs:
           echo "::endgroup::"
 
           # The split that found the 12 Nov 2026 slowdown: ref listing is a few
-          # KB and stayed fast, while anything that moves real data stalled.
+          # KB and stayed fast, while anything that moves real data stalled. The
+          # codeload download below is the other half - it is how npm fetches a
+          # GitHub dependency, and ~1 MB where a shallow clone of scripts is 60.
           echo "::group::GitHub: list refs"
           if GIT_TERMINAL_PROMPT=0 timed timeout 60 git ls-remote https://github.com/clusterflick/scripts.git HEAD; then
             row "git ls-remote (a few KB)" "✅" "$elapsed"
           else
             row "git ls-remote (a few KB)" "❌ $(tail -1 "$work/out")" "$elapsed"
-          fi
-          cat "$work/out"; echo "::endgroup::"
-
-          echo "::group::GitHub: shallow clone"
-          if GIT_TERMINAL_PROMPT=0 timed timeout 120 git clone -q --depth 1 https://github.com/clusterflick/scripts.git "$work/scripts"; then
-            row "git clone --depth 1 scripts" "✅ $(du -sh "$work/scripts/.git" | cut -f1)" "$elapsed"
-          else
-            row "git clone --depth 1 scripts" "❌ $(tail -1 "$work/out")" "$elapsed (limit 120s)"
           fi
           cat "$work/out"; echo "::endgroup::"
 

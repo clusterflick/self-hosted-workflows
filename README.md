@@ -36,11 +36,14 @@ Checks the shared 5G link from whichever runner picks the job up, and writes a
 table to the job summary:
 
 - DNS, the route out, latency and packet loss to 1.1.1.1, and path MTU
-- `git ls-remote` against a shallow clone of `clusterflick/scripts`: listing
-  refs is a few KB, so a link that passes that but stalls on the clone is slow
-  rather than down
-- Single-connection download speed from codeload.github.com and from Cloudflare
-  (`download_mb` input, 10 MB by default, since it comes off the data allowance)
+- `git ls-remote` against a download of `clusterflick/scripts` from
+  codeload.github.com, which is how npm fetches it: listing refs is a few KB, so
+  a link that passes that but crawls on the ~1 MB download is slow rather than
+  down
+- Single-connection download speed from Cloudflare (`download_mb` input, 10 MB
+  by default)
+
+A run uses about 11 MB of the data allowance.
 
 It uses no actions, so it still starts when the link is too slow for a normal
 job's setup. If the link is slow, the

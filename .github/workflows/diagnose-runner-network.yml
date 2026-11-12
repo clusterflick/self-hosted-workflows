@@ -32,6 +32,10 @@ jobs:
             ''|*[!0-9]*) echo "::error::download_mb must be a whole number of MB"; exit 1 ;;
           esac
 
+          # Actions runs this under `bash -e`, which would end the script at the
+          # first check that fails - and a failing check is a result here.
+          set +e
+
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
           rows="$work/rows.md"

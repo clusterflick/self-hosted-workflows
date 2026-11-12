@@ -1,0 +1,146 @@
+on:
+  workflow_dispatch:
+    inputs:
+      download_mb:
+        description:
+          Size of the throughput test download, in MB. Every MB comes off the 5G
+          allowance.
+        default: "10"
+        type: string
+
+name: Diagnose runner network
+
+permissions: {}
+
+jobs:
+  diagnose:
+    name: Diagnose runner network
+    # Every runner goes out through the same 5G router, so whichever one picks
+    # this up is testing the shared link - the job says which box it landed on.
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      # No checkout and no actions: a job that has to download something before
+      # it can start would stall on the very link it is meant to measure. All of
+      # it is one script so that a failing check is recorded and the rest still
+      # run.
+      - name: Diagnose
+        env:
+          DOWNLOAD_MB: ${{ inputs.download_mb }}
+        run: |
+          case "$DOWNLOAD_MB" in
+            ''|*[!0-9]*) echo "::error::download_mb must be a whole number of MB"; exit 1 ;;
+          esac
+
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          rows="$work/rows.md"
+          : > "$rows"
+          row() { printf '| %s | %s | %s |\n' "$1" "$2" "$3" >> "$rows"; }
+          mbps() { awk -v b="$1" 'BEGIN { printf "%.1f Mbit/s (%.0f KB/s)", b * 8 / 1e6, b / 1024 }'; }
+          # Wall-clock seconds for a command, with its output kept for the log.
+          timed() {
+            local start end status
+            start=$(date +%s.%N)
+            "$@" > "$work/out" 2>&1
+            status=$?
+            end=$(date +%s.%N)
+            elapsed=$(awk -v s="$start" -v e="$end" 'BEGIN { printf "%.1fs", e - s }')
+            return $status
+          }
+
+          # Other jobs on the box share the link, so a slow reading means less
+          # when the box is busy retrieving. Runner.Worker is one per running job.
+          busy=$(pgrep -c -f Runner.Worker || true)
+          row "Box" "$(hostname) / $RUNNER_NAME" "$busy job(s) running here, this one included"
+
+          echo "::group::DNS"
+          if timed getent ahostsv4 github.com; then
+            gh_ip=$(awk 'NR == 1 { print $1 }' "$work/out")
+            row "DNS github.com" "✅ $gh_ip" "$elapsed"
+          else
+            row "DNS github.com" "❌ no answer" "$elapsed"
+          fi
+          cat "$work/out"; echo "::endgroup::"
+
+          echo "::group::Route"
+          route=$(ip route get "${gh_ip:-1.1.1.1}" 2>&1 | head -1)
+          echo "$route"
+          via=$(sed -nE 's/.* via ([^ ]+) dev ([^ ]+).*/\1 on \2/p' <<< "$route")
+          row "Route to GitHub" "${via:-$route}" ""
+          echo "::endgroup::"
+
+          # Cloudflare answers ICMP, GitHub doesn't, so latency and loss are
+          # measured against 1.1.1.1.
+          echo "::group::Latency and loss"
+          ping -c 10 -i 0.3 -W 2 1.1.1.1 > "$work/out" 2>&1
+          cat "$work/out"
+          loss=$(grep -oE '[0-9.]+% packet loss' "$work/out" || echo "no reply")
+          rtt=$(sed -nE 's|.*= [0-9.]+/([0-9.]+)/([0-9.]+)/([0-9.]+).*|avg \1 ms, max \2 ms, jitter \3 ms|p' "$work/out")
+          row "Ping 1.1.1.1 ×10" "$loss" "$rtt"
+          echo "::endgroup::"
+
+          # A full 1500-byte packet with don't-fragment set. A hop that reports
+          # "Frag needed" is path MTU discovery working; silence from every hop
+          # alongside stalled large transfers is the black-hole pattern.
+          echo "::group::Path MTU"
+          ping -c 2 -W 2 -M do -s 1472 1.1.1.1 > "$work/out" 2>&1
+          cat "$work/out"
+          if pmtu=$(grep -oE 'mtu = [0-9]+' "$work/out" | head -1 | grep -oE '[0-9]+'); then
+            row "Path MTU" "$pmtu, reported by $(grep -m1 -oE 'From [0-9.]+' "$work/out" | cut -d' ' -f2)" "below 1500 is normal on mobile"
+          elif grep -q ' 0% packet loss' "$work/out"; then
+            row "Path MTU" "1500 gets through" ""
+          else
+            row "Path MTU" "⚠️ 1500-byte ping lost with no frag-needed reply" "possible MTU black hole"
+          fi
+          echo "::endgroup::"
+
+          # The split that found the 12 Nov 2026 slowdown: ref listing is a few
+          # KB and stayed fast, while anything that moves real data stalled.
+          echo "::group::GitHub: list refs"
+          if GIT_TERMINAL_PROMPT=0 timed timeout 60 git ls-remote https://github.com/clusterflick/scripts.git HEAD; then
+            row "git ls-remote (a few KB)" "✅" "$elapsed"
+          else
+            row "git ls-remote (a few KB)" "❌ $(tail -1 "$work/out")" "$elapsed"
+          fi
+          cat "$work/out"; echo "::endgroup::"
+
+          echo "::group::GitHub: shallow clone"
+          if GIT_TERMINAL_PROMPT=0 timed timeout 120 git clone -q --depth 1 https://github.com/clusterflick/scripts.git "$work/scripts"; then
+            row "git clone --depth 1 scripts" "✅ $(du -sh "$work/scripts/.git" | cut -f1)" "$elapsed"
+          else
+            row "git clone --depth 1 scripts" "❌ $(tail -1 "$work/out")" "$elapsed (limit 120s)"
+          fi
+          cat "$work/out"; echo "::endgroup::"
+
+          # One connection each, like npm and git use - a multi-connection
+          # speed test (fast.com) can look fine while a single flow crawls.
+          download() {
+            local label="$1" url="$2" limit="$3"
+            echo "::group::$label"
+            if curl -sS -o /dev/null --max-time "$limit" \
+                -w '%{http_code} %{size_download} %{speed_download} %{time_total}\n' \
+                "$url" > "$work/out" 2> "$work/err"; then
+              read -r code size speed total < "$work/out"
+              row "$label" "✅ $(mbps "$speed")" "$(awk -v s="$size" -v t="$total" 'BEGIN { printf "%.1f MB in %.1fs", s / 1e6, t }')"
+            else
+              read -r code size speed total < "$work/out"
+              row "$label" "❌ $(mbps "${speed:-0}")" "only $(awk -v s="${size:-0}" 'BEGIN { printf "%.1f MB", s / 1e6 }') in ${limit}s: $(head -1 "$work/err")"
+            fi
+            cat "$work/out" "$work/err"; echo "::endgroup::"
+          }
+          download "Download from codeload.github.com" \
+            https://codeload.github.com/clusterflick/scripts/tar.gz/main 60
+          download "Download ${DOWNLOAD_MB} MB from Cloudflare" \
+            "https://speed.cloudflare.com/__down?bytes=$(( DOWNLOAD_MB * 1000000 ))" 120
+
+          {
+            echo "## Runner network"
+            echo
+            echo "| Check | Result | Detail |"
+            echo "| --- | --- | --- |"
+            cat "$rows"
+            echo
+            echo "Healthy on 12 Nov 2026 was ~11 Mbit/s single-connection; the slowdown that broke setup was ~0.7 Mbit/s and cleared with a router restart."
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$rows"

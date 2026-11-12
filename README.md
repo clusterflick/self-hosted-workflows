@@ -4,7 +4,7 @@
 > listing every film showing in London, from 450+ venues in one search.
 >
 > This repository holds the GitHub Actions workflows that run on Clusterflick's
-> own Raspberry Pi runners. See the
+> own self-hosted runners. See the
 > [Clusterflick organisation](https://github.com/clusterflick) for how the
 > pieces fit together.
 
@@ -19,62 +19,33 @@ run from a residential IP address.
 
 ## Self-Hosted Runners
 
-The workflows in this repository target a cluster of Raspberry Pi 4 devices
-configured as GitHub Actions self-hosted runners. Each runner is labeled with
-its specific identifier (e.g., `self-hosted-pi4-1`).
+The runners are two Optiplex boxes, `delrunners` and `delrunners2`, with eight
+runners each (`self-hosted-optiplex-N` and `self-hosted-optiplex5090-N`). Every
+runner goes out through the same 5G router.
 
 x86 mini PCs can also host several runners each; see
 [Setting Up an x86 Runner Host](#setting-up-an-x86-runner-host).
 
 ## Workflows
 
-### Reset Dependencies on Runners
-
-**Trigger:** Scheduled or manual
-
-Performs maintenance on all self-hosted runners by:
-
-- Clearing npm cache
-- Uninstalling all Playwright browsers
-- Reinstalling dependencies and Playwright
-- Installing the Camoufox browser if it is missing, and failing if the install
-  it finds is incomplete
-
-This is how the Pi runners get their Camoufox browser: it is a separate ~650MB
-download that `npm install` does not fetch. It is only fetched when absent, so
-running this workflow never upgrades a working install. The matrix covers the
-Pis only — the macOS runners are provisioned by hand.
-
-### Check runner storage health
+### Diagnose Runner Network
 
 **Trigger:** Manual (`workflow_dispatch`)
 
-Runs a series of checks to confirm the harddrive health, as well as confirm the
-runner setup is correctly using the SSD for all work and cache requirements.
+Checks the shared 5G link from whichever runner picks the job up, and writes a
+table to the job summary:
 
-### Check SD Card Health (Deprecated)
+- DNS, the route out, latency and packet loss to 1.1.1.1, and path MTU
+- `git ls-remote` against a shallow clone of `clusterflick/scripts`: listing
+  refs is a few KB, so a link that passes that but stalls on the clone is slow
+  rather than down
+- Single-connection download speed from codeload.github.com and from Cloudflare
+  (`download_mb` input, 10 MB by default, since it comes off the data allowance)
 
-**Trigger:** Manual (`workflow_dispatch`)
-
-Runs the Raspberry Pi SD card benchmark test on all runners to check for
-potential SD card degradation or failures.
-
-**Deprecated:** Storage has been moved to SSDs. This workflow is still
-available, but is now deprecated.
-
-### Runner Stats
-
-**Trigger:** Manual (`workflow_dispatch`)
-
-Gathers system information from all runners including:
-
-- System overview (kernel, OS, architecture)
-- CPU and memory usage
-- SSD usage and stats
-- SD card usage and stats
-- SD card health checks
-- Temperature readings
-- Process counts
+It uses no actions, so it still starts when the link is too slow for a normal
+job's setup. If the link is slow, the
+[Restart Router](https://github.com/clusterflick/data-retrieved/actions/workflows/restart-router.yml)
+workflow in data-retrieved reconnects it.
 
 ## Usage
 
@@ -221,10 +192,8 @@ Some retrieves through Camoufox, whose browser is a ~650MB download that is
 `clusterflick/.github/setup-cache-paths` points `CAMOUFOX_INSTALL_DIR` at the
 SSD, and the retrieve job fails fast if the browser isn't there.
 
-On a Pi, run the **Reset dependencies on runners** workflow; it installs
-Camoufox as part of its run. To do it by hand instead — or on the macOS runners,
-which that workflow doesn't cover — use the same install directory the jobs will
-use, from any repo that depends on `clusterflick/scripts`:
+Install it by hand, into the same directory the jobs will use, from any repo
+that depends on `clusterflick/scripts`:
 
 ```sh
 export CAMOUFOX_INSTALL_DIR="$RUNNER_CACHE_ROOT/camoufox"
@@ -295,11 +264,6 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up
 ```
 
-### Add to maintenance GitHub Actions
-
-Update the workflows in this repository to include the new runner in any matrix
-configurations or runner lists as needed.
-
 ## Setting Up an x86 Runner Host
 
 A small x86 machine (e.g. a Dell OptiPlex Micro) running Ubuntu Server 24.04
@@ -330,8 +294,8 @@ sudo apt install build-essential -y
 These are the system packages the browsers need (installed with apt), not the
 browsers themselves — those are downloaded into the cache root in
 [Pre-install the browsers](#pre-install-the-browsers) below. Install the
-libraries for both browsers the retrieves use: Chromium (through Playwright)
-and Firefox (for Camoufox), plus Xvfb.
+libraries for both browsers the retrieves use: Chromium (through Playwright) and
+Firefox (for Camoufox), plus Xvfb.
 
 ```sh
 npx playwright@latest install-deps chromium firefox
@@ -341,8 +305,8 @@ sudo apt install xvfb -y
 ### Create the cache root
 
 The NVMe is the system disk, so there is no partitioning, fstab entry or bind
-mount — each runner's `_work` stays in its own directory. Create one cache
-root, shared by every runner on the host:
+mount — each runner's `_work` stays in its own directory. Create one cache root,
+shared by every runner on the host:
 
 ```sh
 sudo mkdir -p /srv/runner-cache
@@ -356,8 +320,8 @@ runners, so several jobs never race to install into the same path.
 
 ### TRIM
 
-Not needed: NVMe TRIM works natively, and Ubuntu's `fstrim.timer` runs weekly
-by default (`systemctl status fstrim.timer`).
+Not needed: NVMe TRIM works natively, and Ubuntu's `fstrim.timer` runs weekly by
+default (`systemctl status fstrim.timer`).
 
 The **Reset dependencies on runners** workflow still calls
 `/usr/local/sbin/enable-ssd-trim.sh`, so create a no-op at that path before
@@ -375,11 +339,13 @@ sudo chmod 755 /usr/local/sbin/enable-ssd-trim.sh
 
 ### Passwordless sudo
 
-The retrieve jobs run `npx playwright install chromium --with-deps`, which on
-Linux runs `sudo -- sh -c "apt-get ..."`. Without passwordless sudo for that,
-every job fails with `sudo: A terminal is required to authenticate`. Allowing
-`sh` is root in all but name, so grant it outright — the same as the Pis get
-from Raspberry Pi OS's default `/etc/sudoers.d/010_pi-nopasswd`:
+Jobs on self-hosted runners install Chromium without `--with-deps` (eight
+runners running apt-get at once fought over the dpkg lock), so the libraries
+from [Install browser system libraries](#install-browser-system-libraries) have
+to be on the host before the first job. Passwordless sudo is still worth
+granting for maintenance and for anything that runs `sudo` unattended. Grant it
+outright — the same as the Pis get from Raspberry Pi OS's default
+`/etc/sudoers.d/010_pi-nopasswd`:
 
 ```sh
 sudo visudo -f /etc/sudoers.d/runner-monitoring
@@ -422,8 +388,8 @@ node -e 'require("camoufox-js/dist/pkgman.js").launchPath()'
 ```
 
 As in [Install the Camoufox browser](#install-the-camoufox-browser), the last
-line is the check that matters: it throws if the fetched release has no
-browser binary.
+line is the check that matters: it throws if the fetched release has no browser
+binary.
 
 ### Setup GitHub Actions runners
 
@@ -432,8 +398,8 @@ https://github.com/organizations/clusterflick/settings/actions/runners/new?arch=
 
 For each runner `N` on the host, unpack the runner into its own directory,
 following the download commands on that page but in `~/actions-runner-N` rather
-than `~/actions-runner`. Each runner needs its own registration token, so
-reload the page between runners. In the CLI:
+than `~/actions-runner`. Each runner needs its own registration token, so reload
+the page between runners. In the CLI:
 
 - Leave runner group default
 - Name: `self-hosted-<host>-N` (e.g. `self-hosted-optiplex-1`)
@@ -456,17 +422,11 @@ sudo ./svc.sh status
 
 ### BIOS
 
-Set the machine to power back on after a power cut (on Dell: **Power
-Management → AC Recovery → Power On**).
+Set the machine to power back on after a power cut (on Dell: **Power Management
+→ AC Recovery → Power On**).
 
 ### Setup Tailscale
 
-As for a Pi: see [Setup Tailscale](#setup-tailscale). Use the host name from
-the runner names (e.g. `sudo tailscale up --hostname=optiplex`), and disable
-key expiry for the machine in the Tailscale admin console.
-
-### Add to maintenance GitHub Actions
-
-Add each runner label to the workflow matrices in this repository. The storage
-checks were written for a Pi's USB SSD at `/dev/sda`, so expect to adapt them
-for a host whose disk is `/dev/nvme0n1`.
+As for a Pi: see [Setup Tailscale](#setup-tailscale). Use the host name from the
+runner names (e.g. `sudo tailscale up --hostname=optiplex`), and disable key
+expiry for the machine in the Tailscale admin console.
